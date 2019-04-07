@@ -44,7 +44,7 @@ def generateDictionary():
 		f.close()
 	except IOError:
 		f = open("tags.ini", 'w')
-		f.write("[TAG VALUES]\n")
+		f.write("[ATTRIBUTE VALUES]\n")
 		f.write("\n")
 		f.write("service=service\n")
 		f.write("operation=operation\n")
@@ -80,7 +80,8 @@ def xhtml2resources(xhtml, hrests_dict):
 			op["name"] = operation.get('id')
 			op["method"] = operation.find(attrs={'class':hrests_dict['method']}).text
 			op["endpoint"] = operation.find(attrs={'class':hrests_dict['endpoint']}).text
-			op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"])
+			if operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]):
+				op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"])
 			if operation.find(attrs={'class':hrests_dict['input']}):
 				op["input"] = []
 				for code in operation.find(attrs={'class':hrests_dict['input']}).findAll('code'):
@@ -119,25 +120,42 @@ def generateWSDL2(resources):
 
 	"""
 
-	bindings = set(op["binding"] for op in resources["operations"])
-	for binding in bindings:
-		xml += "<wsdl:binding name=\"" + binding + "HTTPBinding\"\n"
+	endpoints = set(op["endpoint"] for op in resources["operations"])
+	counter = 0
+	for endpoint in endpoints:
+		opBinding = None
+		try:
+			opBinding = next (op for op in resources["operations"] if op["endpoint"] == endpoint and "binding" in op)
+		except:
+			opBinding = next (op for op in resources["operations"] if op["endpoint"] == endpoint)
+		binding = ""
+		httpEndpoint = ""
+		if "binding" in opBinding:
+			binding = opBinding["binding"] + "HTTPBinding"
+			httpEndpoint = opBinding["binding"] + "HTTPEndpoint"
+		else:
+			binding = resources["service"] + "HTTPBinding" + str(counter)
+			httpEndpoint = resources["service"] + "HTTPEndpoint" + str(counter)
+			counter += 1
+		xml += "<wsdl:binding name=\"" + binding + "\"\n"
 		xml += """		type="http://www.w3.org/ns/wsdl/http"
     interface="tns:BookListInterface">
 """
 		for op in resources["operations"]:
-			if op["binding"] == binding:
-				xml += "			<wsdl:operation ref=\"tns:" + op["name"] + "\" whttp:method=\"" + op["method"] + "\"/>\n"
+			if op["endpoint"] == endpoint:
+				op["binding"] = binding
+				op["httpEndpoint"] = httpEndpoint
+				xml += "		<wsdl:operation ref=\"tns:" + op["name"] + "\" whttp:method=\"" + op["method"] + "\"/>\n"
 		xml += """  </wsdl:binding>
 
   """
 
 	xml += "<wsdl:service name=\"" + resources["service"] + "\" interface=\"tns:" + resources["service"] + "Interface\">\n"
-	for binding in bindings:
-		xml += "		<wsdl:endpoint name=\"" + binding + "HTTPEndpoint\"\n"
-		xml += "			binding=\"tns:" + binding + "HTTPBinding\"\n"  
-		ep = next (op for op in resources["operations"] if op["binding"] == binding)
-		xml += "			address=\"" + ep["endpoint"] + "\">\n"
+	for endpoint in endpoints:
+		opBinding = next (op for op in resources["operations"] if op["endpoint"] == endpoint)
+		xml += "		<wsdl:endpoint name=\"" + opBinding["httpEndpoint"] + "\"\n"
+		xml += "			binding=\"tns:" + opBinding["binding"] + "\"\n"  
+		xml += "			address=\"" + endpoint + "\">\n"
 		xml += "		</wsdl:endpoint>\n"
 	xml += """	</wsdl:service>
 </wsdl:description>"""
