@@ -64,20 +64,34 @@ def generateDictionary():
 
 	return hrests_dict
 
+# Generate WSDL 2.0 document
+def generateWSDL2(resources):
+	xml = """<wsdl:description xmlns:wsdl="http://www.w3.org/ns/wsdl"
+   targetNamespace="http://www.bookstore.org/booklist/wsdl"
+   xmlns:tns="http://www.bookstore.org/booklist/wsdl"
+   xmlns:whttp="http://www.w3.org/ns/wsdl/http"
+   xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions"
+   xmlns:xs="http://www.w3.org/2001/XMLSchema"
+   xmlns:msg="http://www.bookstore.org/booklist/xsd">
+	"""
+	f = open("res.xml", 'w')
+	f.write(xml)
+	f.close()
+
 # Extract hRESTS resources using the dictionary
 def xhtml2resources(xhtml, hrests_dict):
 	soup = BeautifulSoup(xhtml, "lxml")
 	try:
 		for operation in soup.findAll('div', {'class': 'operation'}):
 			print(operation.get('id'))
-			print("label: " + operation.find('code', {'class':hrests_dict['label']}).text)
-			print("method: " + operation.find('span', {'class':hrests_dict['method']}).text)
-			print("address: " + operation.find('code', {'class':hrests_dict['address']}).text)
-			if operation.find('span', {'class':hrests_dict['optional-input']}):
+			print("label: " + operation.find(attrs={'class':hrests_dict['label']}).text)
+			print("method: " + operation.find(attrs={'class':hrests_dict['method']}).text)
+			print("address: " + operation.find(attrs={'class':hrests_dict['address']}).text)
+			if operation.find(attrs={'class':hrests_dict['optional-input']}):
 				print('optional input:')
-				for code in operation.find('span', {'class':hrests_dict['optional-input']}).findAll('code'):
+				for code in operation.find(attrs={'class':hrests_dict['optional-input']}).findAll('code'):
 					print(code.text)
-			print("output: " + operation.find('span', {'class':hrests_dict['output']}).find('code').text)
+			print("output: " + operation.find(attrs={'class':hrests_dict['output']}).find('code').text)
 	except Exception as e:
 		print(e)
 		sys.exit()
@@ -96,4 +110,6 @@ else:
 		print('%s : %s' % (xhtml[1], xhtml[2]))
 		sys.exit()
 	else:
-		xhtml2resources(xhtml, generateDictionary())
+		resources = xhtml2resources(xhtml, generateDictionary())
+		generateWSDL2(resources)
+
