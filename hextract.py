@@ -28,6 +28,7 @@ def html2xhtml(hrests_url):
 
 	except Exception as e:
 		print(e)
+		print("Check your connection.")
 		sys.exit()
 
 # Generate hRESTS dictionary using tags.ini
@@ -43,58 +44,107 @@ def generateDictionary():
 		f.close()
 	except IOError:
 		f = open("tags.ini", 'w')
-		f.write("[TAGS]\n")
+		f.write("[TAG VALUES]\n")
 		f.write("\n")
+		f.write("service=service\n")
 		f.write("operation=operation\n")
 		f.write("id=id\n")
-		f.write("label=label\n")
 		f.write("method=method\n")
-		f.write("address=address\n")
-		f.write("optional-input=optional-input\n")
+		f.write("endpoint=endpoint\n")
+		f.write("input=input\n")
 		f.write("output=output\n")
+		f.write("[CUSTOM ATTRIBUTES")
+		f.write("binding=data-binding")
 		f.close()
 
+		hrests_dict["service"] = "service"
 		hrests_dict["operation"] = "operation"
 		hrests_dict["id"] = "id"
-		hrests_dict["label"] = "label"
 		hrests_dict["method"] = "method"
-		hrests_dict["address"] = "address"
-		hrests_dict["optional-input"] = "optional-input"
+		hrests_dict["endpoint"] = "endpoint"
+		hrests_dict["input"] = "input"
 		hrests_dict["output"] = "output"
+		hrests_dict["binding"] = "data-binding"
 
 	return hrests_dict
 
+# Extract hRESTS resources using the dictionary
+def xhtml2resources(xhtml, hrests_dict):
+	resources = {}
+	soup = BeautifulSoup(xhtml, "lxml")
+	try:
+		resources["service"] = soup.find(attrs={'class':hrests_dict['service']}).get('id')
+		resources["operations"] = []
+		for operation in soup.findAll(attrs={'class': 'operation'}):
+			op = {}
+			op["name"] = operation.get('id')
+			op["method"] = operation.find(attrs={'class':hrests_dict['method']}).text
+			op["endpoint"] = operation.find(attrs={'class':hrests_dict['endpoint']}).text
+			op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"])
+			if operation.find(attrs={'class':hrests_dict['input']}):
+				op["input"] = []
+				for code in operation.find(attrs={'class':hrests_dict['input']}).findAll('code'):
+					op["input"].append(code.text)
+			op["output"] = operation.find(attrs={'class':hrests_dict['output']}).find('code').text
+			resources["operations"].append(op)
+		return resources
+	except Exception as e:
+		print(e)
+		print("Make sure all tag attributes are used correctly.")
+		sys.exit()
+
 # Generate WSDL 2.0 document
 def generateWSDL2(resources):
+	resources["targetNamespace"] = "http://www.bookstore.org/booklist/wsdl"
+
 	xml = """<wsdl:description xmlns:wsdl="http://www.w3.org/ns/wsdl"
-   targetNamespace="http://www.bookstore.org/booklist/wsdl"
-   xmlns:tns="http://www.bookstore.org/booklist/wsdl"
-   xmlns:whttp="http://www.w3.org/ns/wsdl/http"
-   xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions"
-   xmlns:xs="http://www.w3.org/2001/XMLSchema"
-   xmlns:msg="http://www.bookstore.org/booklist/xsd">
 	"""
+	xml += "xmlns:tns=\"" + resources['targetNamespace'] + "\"\n"
+	xml += """	xmlns:whttp="http://www.w3.org/ns/wsdl/http"
+	xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions">
+
+	"""
+
+	xml += "<wsdl:interface name=\"" + resources["service"] + "Interface\">\n"
+	for op in resources["operations"]:
+		xml += "		<wsdl:operation name=\"" + op["name"] + "\"\n"
+		xml += """			pattern="http://www.w3.org/ns/wsdl/in-out"
+			style="http://www.w3.org/ns/wsdl/style/iri"
+			wsdlx:safe="true">
+			"""
+		xml += "<wsdl:input element=\"msg:" + op["name"] + "-input\"/>\n"
+		xml += "			<wsdl:output element=\"msg:" + op["name"] + "-output\"/>\n"
+		xml += "		</wsdl:operation>\n"
+	xml += """	</wsdl:interface>
+
+	"""
+
+	bindings = set(op["binding"] for op in resources["operations"])
+	for binding in bindings:
+		xml += "<wsdl:binding name=\"" + binding + "HTTPBinding\"\n"
+		xml += """		type="http://www.w3.org/ns/wsdl/http"
+    interface="tns:BookListInterface">
+"""
+		for op in resources["operations"]:
+			if op["binding"] == binding:
+				xml += "			<wsdl:operation ref=\"tns:" + op["name"] + "\" whttp:method=\"" + op["method"] + "\"/>\n"
+		xml += """  </wsdl:binding>
+
+  """
+
+	xml += "<wsdl:service name=\"" + resources["service"] + "\" interface=\"tns:" + resources["service"] + "Interface\">\n"
+	for binding in bindings:
+		xml += "		<wsdl:endpoint name=\"" + binding + "HTTPEndpoint\"\n"
+		xml += "			binding=\"tns:" + binding + "HTTPBinding\"\n"  
+		ep = next (op for op in resources["operations"] if op["binding"] == binding)
+		xml += "			address=\"" + ep["endpoint"] + "\">\n"
+		xml += "		</wsdl:endpoint>\n"
+	xml += """	</wsdl:service>
+</wsdl:description>"""
+
 	f = open("res.xml", 'w')
 	f.write(xml)
 	f.close()
-
-# Extract hRESTS resources using the dictionary
-def xhtml2resources(xhtml, hrests_dict):
-	soup = BeautifulSoup(xhtml, "lxml")
-	try:
-		for operation in soup.findAll('div', {'class': 'operation'}):
-			print(operation.get('id'))
-			print("label: " + operation.find(attrs={'class':hrests_dict['label']}).text)
-			print("method: " + operation.find(attrs={'class':hrests_dict['method']}).text)
-			print("address: " + operation.find(attrs={'class':hrests_dict['address']}).text)
-			if operation.find(attrs={'class':hrests_dict['optional-input']}):
-				print('optional input:')
-				for code in operation.find(attrs={'class':hrests_dict['optional-input']}).findAll('code'):
-					print(code.text)
-			print("output: " + operation.find(attrs={'class':hrests_dict['output']}).find('code').text)
-	except Exception as e:
-		print(e)
-		sys.exit()
 
 # Main Program
 if len(sys.argv) < 2:
@@ -104,7 +154,8 @@ if len(sys.argv) < 2:
   sys.exit(1)
 else:
 	hrests_url = sys.argv[1]
-	xhtml = html2xhtml(str(hrests_url).replace('"', ''))
+	# xhtml = html2xhtml(str(hrests_url).replace('"', ''))
+	xhtml = requests.get(hrests_url).text
 	if isinstance (xhtml, tuple):
 		print(xhtml[0])
 		print('%s : %s' % (xhtml[1], xhtml[2]))
@@ -112,4 +163,5 @@ else:
 	else:
 		resources = xhtml2resources(xhtml, generateDictionary())
 		generateWSDL2(resources)
+		# print(resources)
 
