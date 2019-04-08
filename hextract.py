@@ -132,9 +132,11 @@ def html2resources(xhtml, hrests_dict):
 
 # Generate WSDL 2.0 document
 def generateWSDL2(resources):
-	xml = """<wsdl:description xmlns:wsdl="http://www.w3.org/ns/wsdl"
+	xml = """<?xml version="1.0"?> 
+<wsdl:description xmlns:wsdl="http://www.w3.org/ns/wsdl"
 	"""
-	xml += "xmlns:tns=\"" + resources['targetNamespace'] + "\"\n"
+	xml += "targetNamespace=\"" + resources["targetNamespace"] + "\"\n"
+	xml += "	xmlns:tns=\"" + resources['targetNamespace'] + "\"\n"
 	xml += "	xmlns:msg=\"" + resources['targetNamespace'] + "\"\n"
 	xml += """	xmlns:whttp="http://www.w3.org/ns/wsdl/http"
 	xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions">
@@ -146,7 +148,7 @@ def generateWSDL2(resources):
     """
 	xml += "	targetNamespace=\"" + resources["targetNamespace"] + "\">\n"
 	for op in resources["operations"]:
-		xml += "			<xsd:element name=\"" + op["name"] + "-input\" type=\"xsd:" + op["name"] + "-inputType\"/>\n"
+		xml += "			<xsd:element name=\"" + op["name"] + "-input\" type=\"tns:" + op["name"] + "-inputType\"/>\n"
 		xml += "			<xsd:complexType name=\"" + op["name"] + "-inputType\">\n"
 		xml += "				<xsd:sequence>\n"
 		for inp in op["inputs"]:
