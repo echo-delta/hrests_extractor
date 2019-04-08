@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# coding=utf-8
 
 # Libraries
 from bs4 import BeautifulSoup
@@ -45,7 +46,6 @@ def generateDictionary():
 	except IOError:
 		f = open("tags.ini", 'w')
 		f.write("[ATTRIBUTE VALUES]\n")
-		f.write("\n")
 		f.write("service=service\n")
 		f.write("operation=operation\n")
 		f.write("id=id\n")
@@ -53,8 +53,12 @@ def generateDictionary():
 		f.write("endpoint=endpoint\n")
 		f.write("input=input\n")
 		f.write("output=output\n")
-		f.write("[CUSTOM ATTRIBUTES")
-		f.write("binding=data-binding")
+		f.write("\n")
+		f.write("[CUSTOM ATTRIBUTES]\n")
+		f.write("binding=data-binding\n")
+		f.write("type=data-type\n")
+		f.write("minOccurs=data-minOccurs\n")
+		f.write("maxOccurs=data-maxOccurs\n")
 		f.close()
 
 		hrests_dict["service"] = "service"
@@ -65,28 +69,60 @@ def generateDictionary():
 		hrests_dict["input"] = "input"
 		hrests_dict["output"] = "output"
 		hrests_dict["binding"] = "data-binding"
+		hrests_dict["type"] = "data-type"
+		hrests_dict["minOccurs"] = "data-minOccurs"
+		hrests_dict["maxOccurs"] = "data-maxOccurs"
 
 	return hrests_dict
 
 # Extract hRESTS resources using the dictionary
-def xhtml2resources(xhtml, hrests_dict):
+def html2resources(xhtml, hrests_dict):
 	resources = {}
 	soup = BeautifulSoup(xhtml, "lxml")
 	try:
-		resources["service"] = soup.find(attrs={'class':hrests_dict['service']}).get('id')
+		resources["service"] = soup.find(attrs={'class':hrests_dict['service']}).get('id').replace(" ", "")
 		resources["operations"] = []
 		for operation in soup.findAll(attrs={'class': 'operation'}):
 			op = {}
-			op["name"] = operation.get('id')
-			op["method"] = operation.find(attrs={'class':hrests_dict['method']}).text
-			op["endpoint"] = operation.find(attrs={'class':hrests_dict['endpoint']}).text
+			op["name"] = operation.get('id').replace(" ", "")
+			op["method"] = operation.find(attrs={'class':hrests_dict['method']}).text.replace(" ", "")
+			op["endpoint"] = operation.find(attrs={'class':hrests_dict['endpoint']}).text.replace(" ", "")
 			if operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]):
-				op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"])
-			if operation.find(attrs={'class':hrests_dict['input']}):
-				op["input"] = []
-				for code in operation.find(attrs={'class':hrests_dict['input']}).findAll('code'):
-					op["input"].append(code.text)
-			op["output"] = operation.find(attrs={'class':hrests_dict['output']}).find('code').text
+				op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]).replace(" ", "")
+			op["inputs"] = []
+			for input in operation.findAll(attrs={'class':hrests_dict['input']}):
+				inp ={}
+				inp["name"] = input.text.replace(" ", "")
+				if input.has_attr(hrests_dict["type"]):
+					inp["type"] = input.get(hrests_dict["type"])
+				else:
+					inp["type"] = "string"
+				if input.has_attr(hrests_dict["minOccurs"]):
+					inp["minOccurs"] = input.get(hrests_dict["minOccurs"])
+				else:
+					inp["minOccurs"] = "0"
+				if input.has_attr(hrests_dict["maxOccurs"]):
+					inp["maxOccurs"] = input.get(hrests_dict["maxOccurs"])
+				else:
+					inp["maxOccurs"] = "unbounded"
+				op["inputs"].append(inp)
+			op["outputs"] = []
+			for output in operation.findAll(attrs={'class':hrests_dict['output']}):
+				out ={}
+				out["name"] = output.text.replace(" ", "")
+				if output.has_attr(hrests_dict["type"]):
+					out["type"] = output.get(hrests_dict["type"])
+				else:
+					out["type"] = "string"
+				if output.has_attr(hrests_dict["minOccurs"]):
+					out["minOccurs"] = output.get(hrests_dict["minOccurs"])
+				else:
+					out["minOccurs"] = "0"
+				if output.has_attr(hrests_dict["maxOccurs"]):
+					out["maxOccurs"] = output.get(hrests_dict["maxOccurs"])
+				else:
+					out["maxOccurs"] = "unbounded"
+				op["outputs"].append(out)
 			resources["operations"].append(op)
 		return resources
 	except Exception as e:
@@ -96,22 +132,50 @@ def xhtml2resources(xhtml, hrests_dict):
 
 # Generate WSDL 2.0 document
 def generateWSDL2(resources):
-	resources["targetNamespace"] = "http://www.bookstore.org/booklist/wsdl"
-
 	xml = """<wsdl:description xmlns:wsdl="http://www.w3.org/ns/wsdl"
 	"""
 	xml += "xmlns:tns=\"" + resources['targetNamespace'] + "\"\n"
+	xml += "	xmlns:msg=\"" + resources['targetNamespace'] + "\"\n"
 	xml += """	xmlns:whttp="http://www.w3.org/ns/wsdl/http"
 	xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions">
 
 	"""
 
+	xml += """<wsdl:types>
+    <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    """
+	xml += "	targetNamespace=\"" + resources["targetNamespace"] + "\">\n"
+	for op in resources["operations"]:
+		xml += "			<xsd:element name=\"" + op["name"] + "-input\" type=\"xsd:" + op["name"] + "-inputType\"/>\n"
+		xml += "			<xsd:complexType name=\"" + op["name"] + "-inputType\">\n"
+		xml += "				<xsd:sequence>\n"
+		for inp in op["inputs"]:
+			xml += "					<xsd:element name=\"" + inp["name"] + "\" type=\"xsd:" + inp["type"] + "\" minOccurs=\"" + inp["minOccurs"] + "\" maxOccurs=\"" + inp["maxOccurs"] + "\"/>\n"
+		xml += """				</xsd:sequence>
+  		</xsd:complexType>
+  	"""
+		xml += "	<xsd:element name=\"" + op["name"] + "-output\" type=\"tns:" + op["name"] + "-outputType\"/>\n"
+		xml += "			<xsd:complexType name=\"" + op["name"] + "-outputType\">\n"
+		xml += "				<xsd:sequence>\n"
+		for out in op["outputs"]:
+			xml += "					<xsd:element name=\"" + out["name"] + "\" type=\"xsd:" + out["type"] + "\" minOccurs=\"" + out["minOccurs"] + "\" maxOccurs=\"" + out["maxOccurs"] + "\"/>\n"
+		xml += """				</xsd:sequence>
+  		</xsd:complexType>
+  	"""
+	xml += """</xsd:schema>    
+  </wsdl:types>
+
+  """
+
 	xml += "<wsdl:interface name=\"" + resources["service"] + "Interface\">\n"
 	for op in resources["operations"]:
 		xml += "		<wsdl:operation name=\"" + op["name"] + "\"\n"
 		xml += """			pattern="http://www.w3.org/ns/wsdl/in-out"
-			style="http://www.w3.org/ns/wsdl/style/iri"
-			wsdlx:safe="true">
+			"""
+		if op["method"] == "GET":
+			xml += """wsdlx:safe="true"
+			"""
+		xml += """style="http://www.w3.org/ns/wsdl/style/iri">
 			"""
 		xml += "<wsdl:input element=\"msg:" + op["name"] + "-input\"/>\n"
 		xml += "			<wsdl:output element=\"msg:" + op["name"] + "-output\"/>\n"
@@ -158,28 +222,31 @@ def generateWSDL2(resources):
 		xml += "			address=\"" + endpoint + "\">\n"
 		xml += "		</wsdl:endpoint>\n"
 	xml += """	</wsdl:service>
+
 </wsdl:description>"""
 
-	f = open("res.xml", 'w')
+	f = open(resources["service"] + ".wsdl", 'w')
 	f.write(xml)
 	f.close()
 
 # Main Program
-if len(sys.argv) < 2:
-  print('Usage: %s <hRESTS URL address>' % sys.argv[0])
+if len(sys.argv) < 3:
+  print('Usage: %s <hRESTS URL address> <targetNamespace>' % sys.argv[0])
   print('Press any key to exit.')
   input()
   sys.exit(1)
 else:
 	hrests_url = sys.argv[1]
+	targetNamespace = sys.argv[2]
 	# xhtml = html2xhtml(str(hrests_url).replace('"', ''))
-	xhtml = requests.get(hrests_url).text
-	if isinstance (xhtml, tuple):
-		print(xhtml[0])
-		print('%s : %s' % (xhtml[1], xhtml[2]))
+	html = requests.get(hrests_url).text
+	if isinstance (html, tuple):
+		print(html[0])
+		print('%s : %s' % (html[1], html[2]))
 		sys.exit()
 	else:
-		resources = xhtml2resources(xhtml, generateDictionary())
+		resources = html2resources(html, generateDictionary())
+		resources["targetNamespace"] = targetNamespace
 		generateWSDL2(resources)
-		# print(resources)
+		print(resources)
 
