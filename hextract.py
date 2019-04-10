@@ -241,7 +241,11 @@ else:
 	hrests_url = sys.argv[1]
 	targetNamespace = sys.argv[2]
 	# xhtml = html2xhtml(str(hrests_url).replace('"', ''))
-	html = requests.get(hrests_url).text
+	try:
+		html = requests.get(hrests_url).text
+	except:
+		print("Could not retrieve source page, check your connection.")
+		sys.exit(1)
 	if isinstance (html, tuple):
 		print(html[0])
 		print('%s : %s' % (html[1], html[2]))
