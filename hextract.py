@@ -3,9 +3,9 @@
 
 # Libraries
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 import requests, sys, http.client, urllib
 
-import os
 
 # Convert HTML to XHTML using html2xhtml API by Jesús Arias Fisteus
 # http://www.it.uc3m.es/jaf/html2xhtml/web-api.html
@@ -89,81 +89,144 @@ def generateDictionary():
 
 # Extract hRESTS resources using the dictionary
 def html2resources(xhtml, hrests_dict):
+	methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+	xsdTypes = ['anyUri',
+							'base64Binary',
+							'boolean',
+							'byte',
+							'date',
+							'dateTime',
+							'dateTimeStamp',
+							'dayTimeDuration',
+							'decimal',
+							'double',
+							'float',
+							'gDay',
+							'gMonth',
+							'gMonthDay',
+							'gYear',
+							'gYearMonth',
+							'hexBinary',
+							'int',
+							'integer',
+							'language',
+							'long',
+							'Name',
+							'NCName',
+							'NMTOKEN',
+							'negativeInteger',
+							'nonNegativeInteger',
+							'nonPositiveInteger',
+							'normalizedString',
+							'positiveInteger',
+							'short',
+							'string',
+							'time',
+							'token',
+							'unsignedByte',
+							'unsignedInt',
+							'unsignedLong',
+							'unsignedShort',
+							'yearMonthDuration',
+							'precisionDecimal',
+							'duration',
+							'QName',
+							'ENTITY',
+							'ID',
+							'IDREF',
+							'NOTATION',
+							'IDREFS',
+							'ENTITIES',
+							'NMTOKENS']
 	resources = {}
 	soup = BeautifulSoup(xhtml, "lxml")
-	# try:
-	service = soup.find(attrs={'class':hrests_dict['service']})
-	resources["service"] = service.get('id').replace(" ", "")
-	resources["targetNamespace"] = service.get(hrests_dict["targetNamespace"]).replace(" ", "")
-	if service.has_attr(hrests_dict["xsdnamespace"]):
-		resources["xsdnamespace"] = service.get(hrests_dict["xsdnamespace"]).replace(" ", "")
-		resources["schemaLocation"] = service.get(hrests_dict["schemaLocation"]).replace(" ","")
-	resources["operations"] = []
-	for operation in soup.findAll(attrs={'class': 'operation'}):
-		op = {}
-		op["name"] = operation.get('id').replace(" ", "")
-		op["method"] = operation.find(attrs={'class':hrests_dict['method']}).text.replace(" ", "")
-		op["endpoint"] = operation.find(attrs={'class':hrests_dict['endpoint']}).text.replace(" ", "")
-		if operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]):
-			op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]).replace(" ", "")
-		op["input"] = {}
-		inpObj = {}
-		inpObj["params"] = []
-		inputs = operation.find(attrs={'class':hrests_dict['input']})
-		if inputs:
-			if inputs.has_attr(hrests_dict["message"]):
-				inpObj["message"] = inputs.get(hrests_dict["message"]).replace(" ", "")
-			else:
-				inpObj["message"] = op["name"] + "Request"
-			for input in inputs.findAll(attrs={'class':hrests_dict['param']}):
-				inp ={}
-				inp["name"] = input.text.replace(" ", "")
-				if input.has_attr(hrests_dict["type"]):
-					inp["type"] = input.get(hrests_dict["type"])
+	try:
+		service = soup.find(attrs={'class':hrests_dict['service']})
+		resources["service"] = service.get('id').replace(" ", "")
+		resources["targetNamespace"] = service.get(hrests_dict["targetNamespace"]).replace(" ", "")
+		if urlparse(resources["targetNamespace"]).scheme == "":
+			raise Exception("Error while extracting resources: target namespace must be a valid URI.")
+		if service.has_attr(hrests_dict["xsdnamespace"]):
+			resources["xsdnamespace"] = service.get(hrests_dict["xsdnamespace"]).replace(" ", "")
+			if urlparse(resources["xsdnamespace"]).scheme == "":
+				raise Exception("Error while extracting resources: xsd namespace must be a valid URI.")
+			resources["schemaLocation"] = service.get(hrests_dict["schemaLocation"]).replace(" ","")
+			if not resources["schemaLocation"].endswith(".xsd"):
+				raise Exception("Error while extracting resources: schema location must be of xsd format.")
+		resources["operations"] = []
+		for operation in soup.findAll(attrs={'class': 'operation'}):
+			op = {}
+			op["name"] = operation.get('id').replace(" ", "")
+			op["method"] = operation.find(attrs={'class':hrests_dict['method']}).text.replace(" ", "")
+			if op["method"] not in methods:
+				raise Exception("Error while parsing operation " + op["name"] + ": invalid REST method.")
+			op["endpoint"] = operation.find(attrs={'class':hrests_dict['endpoint']}).text.replace(" ", "")
+			if urlparse(op["endpoint"]).scheme == "":
+				raise Exception("Error while parsing operation " + op["name"] + ": endpoint must be a valid URI.")
+			if operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]):
+				op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]).replace(" ", "")
+			op["input"] = {}
+			inpObj = {}
+			inpObj["params"] = []
+			inputs = operation.find(attrs={'class':hrests_dict['input']})
+			if inputs:
+				if inputs.has_attr(hrests_dict["message"]):
+					inpObj["message"] = inputs.get(hrests_dict["message"]).replace(" ", "")
 				else:
-					inp["type"] = "string"
-				if input.has_attr(hrests_dict["minOccurs"]):
-					inp["minOccurs"] = input.get(hrests_dict["minOccurs"])
+					inpObj["message"] = op["name"] + "Request"
+				for input in inputs.findAll(attrs={'class':hrests_dict['param']}):
+					inp ={}
+					inp["name"] = input.text.replace(" ", "")
+					if input.has_attr(hrests_dict["type"]):
+						inp["type"] = input.get(hrests_dict["type"])
+					else:
+						inp["type"] = "string"
+					if inp["type"] not in xsdTypes:
+						raise Exception("Error while parsing operation " + op["name"] + ": invalid datatype for param " + inp["name"] + ".")
+					if input.has_attr(hrests_dict["minOccurs"]):
+						inp["minOccurs"] = input.get(hrests_dict["minOccurs"])
+						if not inp["minOccurs"].isdigit() and not inp["minOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": minOccurs for param " + inp["name"] + " must be a positive integer.")
+					if input.has_attr(hrests_dict["maxOccurs"]):
+						inp["maxOccurs"] = input.get(hrests_dict["maxOccurs"])
+						if not inp["maxOccurs"].isdigit() and not inp["maxOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + inp["name"] + " must be a positive integer.")
+					inpObj["params"].append(inp)
+				op["input"] = inpObj
+			op["output"] = {}
+			outObj = {}
+			outObj["params"] = []
+			outputs = operation.find(attrs={'class':hrests_dict['output']})
+			if outputs:
+				if outputs.has_attr(hrests_dict["message"]):
+					outObj["message"] = outputs.get(hrests_dict["message"]).replace(" ", "")
 				else:
-					inp["minOccurs"] = "0"
-				if input.has_attr(hrests_dict["maxOccurs"]):
-					inp["maxOccurs"] = input.get(hrests_dict["maxOccurs"])
-				else:
-					inp["maxOccurs"] = "unbounded"
-				inpObj["params"].append(inp)
-			op["input"] = inpObj
-		op["output"] = {}
-		outObj = {}
-		outObj["params"] = []
-		outputs = operation.find(attrs={'class':hrests_dict['output']})
-		if outputs:
-			if outputs.has_attr(hrests_dict["message"]):
-				outObj["message"] = outputs.get(hrests_dict["message"]).replace(" ", "")
-			else:
-				outObj["message"] = op["name"] + "Response"
-			for output in outputs.findAll(attrs={'class':hrests_dict['param']}):
-				out ={}
-				out["name"] = output.text.replace(" ", "")
-				if output.has_attr(hrests_dict["type"]):
-					out["type"] = output.get(hrests_dict["type"])
-				else:
-					out["type"] = "string"
-				if output.has_attr(hrests_dict["minOccurs"]):
-					out["minOccurs"] = out.get(hrests_dict["minOccurs"])
-				else:
-					out["minOccurs"] = "0"
-				if output.has_attr(hrests_dict["maxOccurs"]):
-					out["maxOccurs"] = output.get(hrests_dict["maxOccurs"])
-				else:
-					out["maxOccurs"] = "unbounded"
-				outObj["params"].append(out)
-			op["output"] = outObj
-		resources["operations"].append(op)
-	return resources
-	# except Exception as e:
-		# print(e)
-		# print("Make sure all tag attributes are used correctly.")
-		# sys.exit()
+					outObj["message"] = op["name"] + "Response"
+				for output in outputs.findAll(attrs={'class':hrests_dict['param']}):
+					out ={}
+					out["name"] = output.text.replace(" ", "")
+					if output.has_attr(hrests_dict["type"]):
+						out["type"] = output.get(hrests_dict["type"])
+					else:
+						out["type"] = "string"
+					if inp["type"] not in xsdTypes:
+						raise Exception("Error while parsing operation " + op["name"] + ": invalid datatype for param " + inp["name"] + ".")
+					if output.has_attr(hrests_dict["minOccurs"]):
+						out["minOccurs"] = out.get(hrests_dict["minOccurs"])
+						if not inp["minOccurs"].isdigit() and not inp["minOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": minOccurs for param " + inp["name"] + " must be a positive integer.")
+					if output.has_attr(hrests_dict["maxOccurs"]):
+						out["maxOccurs"] = output.get(hrests_dict["maxOccurs"])
+						if not inp["maxOccurs"].isdigit() and not inp["maxOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + inp["name"] + " must be a positive integer.")
+					outObj["params"].append(out)
+				op["output"] = outObj
+			resources["operations"].append(op)
+		return resources
+	except Exception as e:
+		print(e)
+		print("Check your HTML document.")
+		sys.exit()
 
 # Generate WSDL 2.0 document
 def generateWSDL2(resources):
@@ -192,7 +255,12 @@ def generateWSDL2(resources):
 			xml += "				<xsd:complexType>\n"
 			xml += "					<xsd:sequence>\n"
 			for inp in op["input"]["params"]:
-				xml += "						<xsd:element name=\"" + inp["name"] + "\" type=\"xsd:" + inp["type"] + "\" minOccurs=\"" + inp["minOccurs"] + "\" maxOccurs=\"" + inp["maxOccurs"] + "\"/>\n"
+				xml += "						<xsd:element name=\"" + inp["name"] + "\" type=\"xsd:" + inp["type"] + "\""
+				if "minOccurs" in inp:
+					xml += " minOccurs=\"" + inp["minOccurs"] + "\""
+				if "maxOccurs" in inp:
+					xml += " maxOccurs=\"" + inp["maxOccurs"] + "\""
+				xml += "/>\n"
 			xml += """					</xsd:sequence>		
 				</xsd:complexType>
 	  	</xsd:element>
@@ -201,7 +269,12 @@ def generateWSDL2(resources):
 			xml += "				<xsd:complexType>\n"
 			xml += "					<xsd:sequence>\n"
 			for out in op["output"]["params"]:
-				xml += "						<xsd:element name=\"" + out["name"] + "\" type=\"xsd:" + out["type"] + "\" minOccurs=\"" + out["minOccurs"] + "\" maxOccurs=\"" + out["maxOccurs"] + "\"/>\n"
+				xml += "						<xsd:element name=\"" + out["name"] + "\" type=\"xsd:" + out["type"] + "\""
+				if "minOccurs" in out:
+					xml += " minOccurs=\"" + out["minOccurs"] + "\""
+				if "maxOccurs" in inp:
+					xml += " maxOccurs=\"" + out["maxOccurs"] + "\""
+				xml += "/>\n"
 			xml += """					</xsd:sequence>		
 				</xsd:complexType>
 	  	</xsd:element>
