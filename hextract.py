@@ -141,9 +141,13 @@ def html2resources(xhtml, hrests_dict):
 	resources = {}
 	soup = BeautifulSoup(xhtml, "lxml")
 	try:
-		service = soup.find(attrs={'class':hrests_dict['service']})
+		service = soup.find(lambda tag: tag.get('class') == [hrests_dict['service']])
 		resources["service"] = service.get('id').replace(" ", "")
+		if len(resources["service"]) == 0:
+			raise Exception("Error while extracting resources: service name can\'t be empty.")
 		resources["targetNamespace"] = service.get(hrests_dict["targetNamespace"]).replace(" ", "")
+		if len(resources["targetNamespace"]) == 0:
+			raise Exception("Error while extracting resources: targetNamespace can\'t be empty.")
 		if urlparse(resources["targetNamespace"]).scheme == "":
 			raise Exception("Error while extracting resources: target namespace must be a valid URI.")
 		if service.has_attr(hrests_dict["xsdnamespace"]):
@@ -154,29 +158,35 @@ def html2resources(xhtml, hrests_dict):
 			if not resources["schemaLocation"].endswith(".xsd"):
 				raise Exception("Error while extracting resources: schema location must be of xsd format.")
 		resources["operations"] = []
-		for operation in soup.findAll(attrs={'class': 'operation'}):
+		for operation in soup.findAll(lambda tag: tag.get('class') == [hrests_dict['operation']]):
 			op = {}
 			op["name"] = operation.get('id').replace(" ", "")
-			op["method"] = operation.find(attrs={'class':hrests_dict['method']}).text.replace(" ", "")
+			op["method"] = operation.find(lambda tag: tag.get('class') == [hrests_dict['method']]).text.replace(" ", "")
 			if op["method"] not in methods:
 				raise Exception("Error while parsing operation " + op["name"] + ": invalid REST method.")
-			op["endpoint"] = operation.find(attrs={'class':hrests_dict['endpoint']}).text.replace(" ", "")
+			op["endpoint"] = operation.find(lambda tag: tag.get('class') == [hrests_dict['endpoint']]).text.replace(" ", "")
 			if urlparse(op["endpoint"]).scheme == "":
 				raise Exception("Error while parsing operation " + op["name"] + ": endpoint must be a valid URI.")
-			if operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]):
-				op["binding"] = operation.find(attrs={'class':hrests_dict['endpoint']}).get(hrests_dict["binding"]).replace(" ", "")
+			if operation.find(lambda tag: tag.get('class') == [hrests_dict['endpoint']]).get(hrests_dict["binding"]):
+				if len(operation.find(lambda tag: tag.get('class') == [hrests_dict['endpoint']]).get(hrests_dict["binding"]).replace(" ", "")) > 0:
+					op["binding"] = operation.find(lambda tag: tag.get('class') == [hrests_dict['endpoint']]).get(hrests_dict["binding"]).replace(" ", "")
 			op["input"] = {}
 			inpObj = {}
 			inpObj["params"] = []
-			inputs = operation.find(attrs={'class':hrests_dict['input']})
+			inputs = operation.find(lambda tag: tag.get('class') == [hrests_dict['input']])
 			if inputs:
 				if inputs.has_attr(hrests_dict["message"]):
-					inpObj["message"] = inputs.get(hrests_dict["message"]).replace(" ", "")
+					if len(inputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
+						inpObj["message"] = inputs.get(hrests_dict["message"]).replace(" ", "")
+					else:
+						inpObj["message"] = op["name"] + "Request"
 				else:
 					inpObj["message"] = op["name"] + "Request"
-				for input in inputs.findAll(attrs={'class':hrests_dict['param']}):
+				for input in inputs.findAll(lambda tag: tag.get('class') == [hrests_dict['param']]):
 					inp ={}
 					inp["name"] = input.text.replace(" ", "")
+					if len(inp["name"]) == 0:
+						raise Exception("Error while extracting resources: input parameter name can\'t be empty.")
 					if input.has_attr(hrests_dict["type"]):
 						inp["type"] = input.get(hrests_dict["type"])
 					else:
@@ -192,19 +202,27 @@ def html2resources(xhtml, hrests_dict):
 						if not inp["maxOccurs"].isdigit() and not inp["maxOccurs"] == "unbounded":
 							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + inp["name"] + " must be a positive integer.")
 					inpObj["params"].append(inp)
-				op["input"] = inpObj
+			else:
+				inpObj["message"] = op["name"] + "Request"
+			op["input"] = inpObj
+
 			op["output"] = {}
 			outObj = {}
 			outObj["params"] = []
-			outputs = operation.find(attrs={'class':hrests_dict['output']})
+			outputs = operation.find(lambda tag: tag.get('class') == [hrests_dict['output']])
 			if outputs:
 				if outputs.has_attr(hrests_dict["message"]):
-					outObj["message"] = outputs.get(hrests_dict["message"]).replace(" ", "")
+					if len(outputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
+						outObj["message"] = outputs.get(hrests_dict["message"]).replace(" ", "")
+					else:
+						outObj["message"] = op["name"] + "Response"
 				else:
 					outObj["message"] = op["name"] + "Response"
-				for output in outputs.findAll(attrs={'class':hrests_dict['param']}):
+				for output in outputs.findAll(lambda tag: tag.get('class') == [hrests_dict['param']]):
 					out ={}
 					out["name"] = output.text.replace(" ", "")
+					if len(out["name"]) == 0:
+						raise Exception("Error while extracting resources: output parameter name can\'t be empty.")
 					if output.has_attr(hrests_dict["type"]):
 						out["type"] = output.get(hrests_dict["type"])
 					else:
@@ -220,7 +238,10 @@ def html2resources(xhtml, hrests_dict):
 						if not inp["maxOccurs"].isdigit() and not inp["maxOccurs"] == "unbounded":
 							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + inp["name"] + " must be a positive integer.")
 					outObj["params"].append(out)
-				op["output"] = outObj
+			else:
+				outObj["message"] = op["name"] + "Response"
+			op["output"] = outObj
+
 			resources["operations"].append(op)
 		return resources
 	except Exception as e:
@@ -350,7 +371,7 @@ def generateWSDL2(resources):
 # Main Program
 if len(sys.argv) < 2:
   print('Usage: %s <hRESTS URL address>' % sys.argv[0])
-  print('Press any key to exit.')
+  print('Press Enter to exit.')
   input()
   sys.exit(1)
 else:
@@ -367,6 +388,6 @@ else:
 		sys.exit()
 	else:
 		resources = html2resources(html, generateDictionary())
-		generateWSDL2(resources)
 		print(resources)
+		generateWSDL2(resources)
 
