@@ -3,7 +3,11 @@
 
 # Libraries
 from bs4 import BeautifulSoup
+from lxml import etree
+from lxml import html
+from lxml.etree import tostring
 from urllib.parse import urlparse
+from io import StringIO
 import requests, sys, http.client, urllib
 
 
@@ -47,10 +51,9 @@ def generateDictionary():
 		f.close()
 	except IOError:
 		f = open("tags.ini", 'w')
-		f.write("[ATTRIBUTE VALUES]\n")
+		f.write("[XPATH QUERIES]\n")
 		f.write("service=service\n")
 		f.write("operation=operation\n")
-		f.write("id=id\n")
 		f.write("method=method\n")
 		f.write("endpoint=endpoint\n")
 		f.write("input=input\n")
@@ -70,7 +73,6 @@ def generateDictionary():
 
 		hrests_dict["service"] = "service"
 		hrests_dict["operation"] = "operation"
-		hrests_dict["id"] = "id"
 		hrests_dict["method"] = "method"
 		hrests_dict["endpoint"] = "endpoint"
 		hrests_dict["input"] = "input"
@@ -227,16 +229,16 @@ def html2resources(xhtml, hrests_dict):
 						out["type"] = output.get(hrests_dict["type"])
 					else:
 						out["type"] = "string"
-					if inp["type"] not in xsdTypes:
-						raise Exception("Error while parsing operation " + op["name"] + ": invalid datatype for param " + inp["name"] + ".")
+					if out["type"] not in xsdTypes:
+						raise Exception("Error while parsing operation " + op["name"] + ": invalid datatype for param " + out["name"] + ".")
 					if output.has_attr(hrests_dict["minOccurs"]):
-						out["minOccurs"] = out.get(hrests_dict["minOccurs"])
-						if not inp["minOccurs"].isdigit() and not inp["minOccurs"] == "unbounded":
-							raise Exception("Error while parsing operation " + op["name"] + ": minOccurs for param " + inp["name"] + " must be a positive integer.")
+						out["minOccurs"] = output.get(hrests_dict["minOccurs"])
+						if not out["minOccurs"].isdigit() and not out["minOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": minOccurs for param " + out["name"] + " must be a positive integer.")
 					if output.has_attr(hrests_dict["maxOccurs"]):
 						out["maxOccurs"] = output.get(hrests_dict["maxOccurs"])
-						if not inp["maxOccurs"].isdigit() and not inp["maxOccurs"] == "unbounded":
-							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + inp["name"] + " must be a positive integer.")
+						if not out["maxOccurs"].isdigit() and not out["maxOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + out["name"] + " must be a positive integer.")
 					outObj["params"].append(out)
 			else:
 				outObj["message"] = op["name"] + "Response"
@@ -368,6 +370,171 @@ def generateWSDL2(resources):
 	f.write(xml)
 	f.close()
 
+def html2resourcesxpath(html_text, hrests_dict):
+	root = html.document_fromstring(html_text)
+
+	methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+	xsdTypes = ['anyUri',
+							'base64Binary',
+							'boolean',
+							'byte',
+							'date',
+							'dateTime',
+							'dateTimeStamp',
+							'dayTimeDuration',
+							'decimal',
+							'double',
+							'float',
+							'gDay',
+							'gMonth',
+							'gMonthDay',
+							'gYear',
+							'gYearMonth',
+							'hexBinary',
+							'int',
+							'integer',
+							'language',
+							'long',
+							'Name',
+							'NCName',
+							'NMTOKEN',
+							'negativeInteger',
+							'nonNegativeInteger',
+							'nonPositiveInteger',
+							'normalizedString',
+							'positiveInteger',
+							'short',
+							'string',
+							'time',
+							'token',
+							'unsignedByte',
+							'unsignedInt',
+							'unsignedLong',
+							'unsignedShort',
+							'yearMonthDuration',
+							'precisionDecimal',
+							'duration',
+							'QName',
+							'ENTITY',
+							'ID',
+							'IDREF',
+							'NOTATION',
+							'IDREFS',
+							'ENTITIES',
+							'NMTOKENS']
+	resources = {}
+
+	try:
+		service = root.xpath(hrests_dict["service"])[0]
+		resources["service"] = service.get('id').replace(" ", "")
+		if len(resources["service"]) == 0:
+			raise Exception("Error while extracting resources: service name can\'t be empty.")
+		resources["targetNamespace"] = service.get(hrests_dict["targetNamespace"]).replace(" ", "")
+		if len(resources["targetNamespace"]) == 0:
+			raise Exception("Error while extracting resources: targetNamespace can\'t be empty.")
+		if urlparse(resources["targetNamespace"]).scheme == "":
+			raise Exception("Error while extracting resources: target namespace must be a valid URI.")
+		if hrests_dict["xsdnamespace"] in service.attrib:
+			resources["xsdnamespace"] = service.get(hrests_dict["xsdnamespace"]).replace(" ", "")
+			if urlparse(resources["xsdnamespace"]).scheme == "":
+				raise Exception("Error while extracting resources: xsd namespace must be a valid URI.")
+			resources["schemaLocation"] = service.get(hrests_dict["schemaLocation"]).replace(" ","")
+			if not resources["schemaLocation"].endswith(".xsd"):
+				raise Exception("Error while extracting resources: schema location must be of xsd format.")
+		resources["operations"] = []
+		for operation in service.xpath(hrests_dict["operation"]):
+			op = {}
+			op["name"] = operation.get('id').replace(" ", "")
+			op["method"] = operation.xpath(hrests_dict["method"])[0].text_content().replace(" ", "")
+			if op["method"] not in methods:
+				raise Exception("Error while parsing operation " + op["name"] + ": invalid REST method.")
+			endpoint = operation.xpath(hrests_dict["endpoint"])[0]
+			op["endpoint"] = endpoint.text_content().replace(" ", "")
+			if urlparse(op["endpoint"]).scheme == "":
+				raise Exception("Error while parsing operation " + op["name"] + ": endpoint must be a valid URI.")
+			if endpoint.get(hrests_dict["binding"]):
+				if len(endpoint.get(hrests_dict["binding"]).replace(" ", "")) > 0:
+					op["binding"] = endpoint.get(hrests_dict["binding"]).replace(" ", "")
+			op["input"] = {}
+			inpObj = {}
+			inpObj["params"] = []
+			inputs = operation.xpath(hrests_dict["input"])[0]
+			if inputs is not None:
+				if hrests_dict["message"] in inputs.attrib:
+					if len(inputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
+						inpObj["message"] = inputs.get(hrests_dict["message"]).replace(" ", "")
+					else:
+						inpObj["message"] = op["name"] + "Request"
+				else:
+					inpObj["message"] = op["name"] + "Request"
+				for input in inputs.xpath(hrests_dict["param"]):
+					inp ={}
+					inp["name"] = input.text_content().replace(" ", "")
+					if len(inp["name"]) == 0:
+						raise Exception("Error while extracting resources: input parameter name can\'t be empty.")
+					if hrests_dict["type"] in input.attrib:
+						inp["type"] = input.get(hrests_dict["type"])
+					else:
+						inp["type"] = "string"
+					if inp["type"] not in xsdTypes:
+						raise Exception("Error while parsing operation " + op["name"] + ": invalid datatype for param " + inp["name"] + ".")
+					if hrests_dict["minOccurs"] in input.attrib:
+						inp["minOccurs"] = input.get(hrests_dict["minOccurs"])
+						if not inp["minOccurs"].isdigit() and not inp["minOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": minOccurs for param " + inp["name"] + " must be a positive integer.")
+					if hrests_dict["maxOccurs"] in input.attrib:
+						inp["maxOccurs"] = input.get(hrests_dict["maxOccurs"])
+						if not inp["maxOccurs"].isdigit() and not inp["maxOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + inp["name"] + " must be a positive integer.")
+					inpObj["params"].append(inp)
+			else:
+				inpObj["message"] = op["name"] + "Request"
+			op["input"] = inpObj
+
+			op["output"] = {}
+			outObj = {}
+			outObj["params"] = []
+			outputs = operation.xpath(hrests_dict["output"])[0]
+			if outputs is not None:
+				if hrests_dict["message"] in outputs.attrib:
+					if len(outputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
+						outObj["message"] = outputs.get(hrests_dict["message"]).replace(" ", "")
+					else:
+						outObj["message"] = op["name"] + "Response"
+				else:
+					outObj["message"] = op["name"] + "Response"
+				for output in outputs.xpath(hrests_dict["param"]):
+					out ={}
+					out["name"] = output.text_content().replace(" ", "")
+					if len(out["name"]) == 0:
+						raise Exception("Error while extracting resources: output parameter name can\'t be empty.")
+					if hrests_dict["type"] in output.attrib:
+						out["type"] = output.get(hrests_dict["type"])
+					else:
+						out["type"] = "string"
+					if out["type"] not in xsdTypes:
+						raise Exception("Error while parsing operation " + op["name"] + ": invalid datatype for param " + out["name"] + ".")
+					if hrests_dict["minOccurs"] in output.attrib:
+						out["minOccurs"] = output.get(hrests_dict["minOccurs"])
+						if not out["minOccurs"].isdigit() and not out["minOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": minOccurs for param " + out["name"] + " must be a positive integer.")
+					if hrests_dict["maxOccurs"] in output.attrib:
+						out["maxOccurs"] = output.get(hrests_dict["maxOccurs"])
+						if not out["maxOccurs"].isdigit() and not out["maxOccurs"] == "unbounded":
+							raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + out["name"] + " must be a positive integer.")
+					outObj["params"].append(out)
+			else:
+				outObj["message"] = op["name"] + "Response"
+			op["output"] = outObj
+
+			resources["operations"].append(op)
+		return resources
+
+	except Exception as e:
+		print(e)
+		print("Check your HTML document.")
+		sys.exit()
+
 # Main Program
 if len(sys.argv) < 2:
   print('Usage: %s <hRESTS URL address>' % sys.argv[0])
@@ -378,16 +545,17 @@ else:
 	hrests_url = sys.argv[1]
 	# xhtml = html2xhtml(str(hrests_url).replace('"', ''))
 	try:
-		html = requests.get(hrests_url).text
+		html_text = requests.get(hrests_url).text
 	except:
 		print("Could not retrieve source page, check your connection.")
 		sys.exit(1)
-	if isinstance (html, tuple):
-		print(html[0])
-		print('%s : %s' % (html[1], html[2]))
+	if isinstance (html_text, tuple):
+		print(html_text[0])
+		print('%s : %s' % (html_text[1], html_text[2]))
 		sys.exit()
 	else:
-		resources = html2resources(html, generateDictionary())
+		resources = html2resourcesxpath(html_text, generateDictionary())
+		# resources = html2resources(html, generateDictionary())
 		print(resources)
 		generateWSDL2(resources)
 
