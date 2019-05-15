@@ -61,6 +61,7 @@ def generateDictionary():
 		f.write("param=param\n")
 		f.write("\n")
 		f.write("[CUSTOM ATTRIBUTES]\n")
+		f.write("serviceName=id\n")
 		f.write("binding=data-binding\n")
 		f.write("type=data-type\n")
 		f.write("minOccurs=data-minoccurs\n")
@@ -78,6 +79,7 @@ def generateDictionary():
 		hrests_dict["input"] = "input"
 		hrests_dict["output"] = "output"
 		hrests_dict["param"] = "param"
+		hrests_dict["serviceName"] = "id"
 		hrests_dict["binding"] = "data-binding"
 		hrests_dict["type"] = "data-type"
 		hrests_dict["minOccurs"] = "data-minoccurs"
@@ -426,7 +428,7 @@ def html2resourcesxpath(html_text, hrests_dict):
 
 	try:
 		service = root.xpath(hrests_dict["service"])[0]
-		resources["service"] = service.get('id').replace(" ", "")
+		resources["service"] = service.get(hrests_dict["serviceName"]).replace(" ", "")
 		if len(resources["service"]) == 0:
 			raise Exception("Error while extracting resources: service name can\'t be empty.")
 		resources["targetNamespace"] = service.get(hrests_dict["targetNamespace"]).replace(" ", "")
