@@ -1,0 +1,38 @@
+<?xml version="1.0"?> 
+<wsdl:description xmlns:wsdl="http://www.w3.org/ns/wsdl"
+	targetNamespace="http://localhost:3000/invoices"
+	xmlns:tns="http://localhost:3000/invoices"
+	xmlns:msg="http://localhost:3000/invoices"
+	xmlns:whttp="http://www.w3.org/ns/wsdl/http"
+	xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions">
+
+	<wsdl:types>
+    <xsd:import xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+			namespace="http://localhost:3000/invoices"
+			schemaLocation="invoice.xsd"/>
+	</wsdl:types>
+
+  <wsdl:interface name="InvoiceInterface">
+		<wsdl:operation name="getInvoices"
+			pattern="http://www.w3.org/ns/wsdl/in-out"
+			wsdlx:safe="true"
+			style="http://www.w3.org/ns/wsdl/style/iri">
+			<wsdl:input element="msg:getInvoicesRequest"/>
+			<wsdl:output element="msg:getInvoicesResponse"/>
+		</wsdl:operation>
+	</wsdl:interface>
+
+	<wsdl:binding name="InvoiceHTTPBinding"
+		type="http://www.w3.org/ns/wsdl/http"
+    interface="tns:BookListInterface">
+		<wsdl:operation ref="tns:getInvoices" whttp:method="GET"/>
+  </wsdl:binding>
+
+  <wsdl:service name="Invoice" interface="tns:InvoiceInterface">
+		<wsdl:endpoint name="InvoiceHTTPEndpoint"
+			binding="tns:InvoiceHTTPBinding"
+			address="http://localhost:3000/invoices">
+		</wsdl:endpoint>
+	</wsdl:service>
+
+</wsdl:description>
