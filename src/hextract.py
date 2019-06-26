@@ -157,9 +157,9 @@ def generateWSDL2(resources):
 			print("Warning: no binding name specified for " + op["name"] + ", resolved using default name " + binding)
 			counter += 1
 		xml += "<wsdl:binding name=\"" + binding + "\"\n"
-		xml += """		type="http://www.w3.org/ns/wsdl/http"
-    interface="tns:BookListInterface">
-"""
+		xml += "		type=\"http://www.w3.org/ns/wsdl/http\"\n"
+		xml += "		interface=\"tns:" + resources["service"] + "Interface\">\n"
+
 		for op in resources["operations"]:
 			if op["endpoint"] == endpoint:
 				op["binding"] = binding

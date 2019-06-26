@@ -24,7 +24,7 @@
 
 	<wsdl:binding name="InvoiceHTTPBinding"
 		type="http://www.w3.org/ns/wsdl/http"
-    interface="tns:BookListInterface">
+		interface="tns:InvoiceInterface">
 		<wsdl:operation ref="tns:getInvoices" whttp:method="GET"/>
   </wsdl:binding>
 
