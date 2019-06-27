@@ -2,7 +2,6 @@
 # coding=utf-8
 
 # Libraries
-from bs4 import BeautifulSoup
 from lxml import etree
 from lxml import html
 from lxml.etree import tostring
@@ -43,6 +42,11 @@ def generateDictionary():
 		f.write("xsdnamespace=data-xsdnamespace\n")
 		f.write("schemaLocation=data-schemalocation\n")
 		f.write("message=data-message\n")
+		f.write("\n")
+		f.write("[WSO2]\n")
+		f.write("context=https://10.42.0.180:9443\n")
+		f.write("username=admin\n")
+		f.write("password=admin\n")
 		f.close()
 
 		hrests_dict["service"] = "service"
@@ -61,6 +65,9 @@ def generateDictionary():
 		hrests_dict["xsdnamespace"] = "data-xsdnamespace"
 		hrests_dict["schemaLocation"] = "data-schemalocation"
 		hrests_dict["message"] = "data-message"
+		hrests_dict["context"] = "https://10.42.0.180:9443"
+		hrests_dict["username"] = "admin"
+		hrests_dict["password"] = "admin"
 
 	return hrests_dict
 
@@ -352,6 +359,8 @@ def html2resourcesxpath(html_text, hrests_dict):
 			op["output"] = outObj
 
 			resources["operations"].append(op)
+			if len(resources["operations"]) == 0:
+				print("Warning: no operation found.")
 		return resources
 
 	except Exception as e:
@@ -377,7 +386,36 @@ else:
 		print('%s : %s' % (html_text[1], html_text[2]))
 		sys.exit()
 	else:
-		resources = html2resourcesxpath(html_text, generateDictionary())
+		hrests_dict = generateDictionary()
+		resources = html2resourcesxpath(html_text, hrests_dict)
 		generateWSDL2(resources)
 		print()
 		print(resources)
+		print()
+
+		print("Authenticating to WSO2 Governance Registry as " + hrests_dict["username"] + " ...")
+		print()
+		url = hrests_dict["context"] + '/publisher/apis/authenticate'
+		data={'username': hrests_dict["username"], 'password': hrests_dict["password"]}
+		r = requests.post(url, data=data, verify=False)
+		print()
+		if (r.status_code == 200):
+			version = input("Authentication success. Please enter the version of the WSDL 2.0 document: ")
+			
+			print("Adding " + resources["service"] + ".wsdl version " + version + " to WSO2 Governance Registry ...")
+			print()
+			filename = resources["service"] + ".wsdl"
+			url = hrests_dict["context"] + '/publisher/assets/wsdl/apis/wsdls?type=wsdl'
+			data={'wsdl': 'wsdl', 'wsdl_file': filename, 'filename': filename, 'wsdl_file_name': filename, 'file_version': version, 'addNewWsdlFileAssetButton': 'Create'}
+			headers={'Cookie':'JSESSIONID=' + r.json()['data']['sessionId']}
+			files = {'wsdl_file': open("../wsdl/" + resources["service"] + ".wsdl", 'rb')}
+			r2 = requests.post(url, data=data, verify=False, headers=headers, files=files)
+			print()
+			if (r2.status_code != 200):
+				print(str(r2.json()['code']) + " " + r2.json()['description'] + ": " + r2.json()['message'])
+			else:
+				print("File succesfully uploaded.")
+
+		else:
+			print("Authentication failed. Consider uploading the file manually.")
+		
