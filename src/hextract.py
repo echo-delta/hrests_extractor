@@ -8,7 +8,7 @@ from lxml.etree import tostring
 from lxml.builder import E
 from urllib.parse import urlparse
 from io import StringIO
-import requests, sys, http.client, urllib
+import requests, sys, http.client, urllib, os, shutil
 
 # Generate hRESTS dictionary using config.ini
 def generateDictionary():
@@ -34,6 +34,7 @@ def generateDictionary():
 		f.write("\n")
 		f.write("[CUSTOM ATTRIBUTES]\n")
 		f.write("serviceName=id\n")
+		f.write("operationName=id\n")
 		f.write("binding=data-binding\n")
 		f.write("type=data-type\n")
 		f.write("minOccurs=data-minoccurs\n")
@@ -57,6 +58,7 @@ def generateDictionary():
 		hrests_dict["output"] = "output"
 		hrests_dict["param"] = "param"
 		hrests_dict["serviceName"] = "id"
+		hrests_dict["operationName"] = "id"
 		hrests_dict["binding"] = "data-binding"
 		hrests_dict["type"] = "data-type"
 		hrests_dict["minOccurs"] = "data-minoccurs"
@@ -78,7 +80,7 @@ def generateWSDL2(resources):
 	"""
 	xml += "targetNamespace=\"" + resources["targetNamespace"] + "\"\n"
 	xml += "	xmlns:tns=\"" + resources['targetNamespace'] + "\"\n"
-	xml += "	xmlns:msg=\"" + resources['targetNamespace'] + "\"\n"
+	xml += "	xmlns:msg=\"" + resources['xsdnamespace'] + "\"\n"
 	xml += """	xmlns:whttp="http://www.w3.org/ns/wsdl/http"
 	xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions">
 
@@ -187,9 +189,31 @@ def generateWSDL2(resources):
 
 </wsdl:description>"""
 
-	f = open("../wsdl/" + resources["service"] + ".wsdl", 'w')
-	f.write(xml)
-	f.close()
+	if "schemaLocation" not in resources:
+		f = open("../wsdl/" + resources["service"] + ".wsdl", 'w')
+		f.write(xml)
+		f.close()
+	else:
+		try:
+			xsd = requests.get(resources["schemaLocation"]).text
+
+			if not os.path.exists("../wsdl/" + resources["service"]):
+				os.makedirs("../wsdl/" + resources["service"])
+
+			f = open("../wsdl/" + resources["service"] + "/" + resources["service"].lower() + ".xsd", 'w')
+			f.write(xsd.replace('\r', ''))
+			f.close()
+
+			f = open("../wsdl/" + resources["service"] + "/" + resources["service"] + ".wsdl", 'w')
+			f.write(xml)
+			f.close()
+
+			shutil.make_archive("../wsdl/" + resources["service"] + "/" + resources["service"], 'zip', "../wsdl/" + resources["service"])
+
+		except Exception as e:
+			print(e)
+			sys.exit()
+
 
 # Extract html document micorformats to resources using the xpath
 def html2resourcesxpath(html_text, hrests_dict):
@@ -262,12 +286,14 @@ def html2resourcesxpath(html_text, hrests_dict):
 			if urlparse(resources["xsdnamespace"]).scheme == "":
 				raise Exception("Error while extracting resources: xsd namespace must be a valid URI.")
 			resources["schemaLocation"] = service.get(hrests_dict["schemaLocation"]).replace(" ","")
-			if not resources["schemaLocation"].endswith(".xsd") and urlparse(resources["schemaLocation"]).scheme == "":
-				print("Warning: schemaLocation is not of xsd format or valid URI")
+			if len(resources["schemaLocation"]) == 0:
+				raise Exception("Error while extracting resources: schemaLocation can\'t be empty.")
+			elif not resources["schemaLocation"].endswith(".xsd") and urlparse(resources["schemaLocation"]).scheme == "":
+				print("Warning: schemaLocation is not of xsd format or valid URI.")			
 		resources["operations"] = []
 		for operation in service.xpath(hrests_dict["operation"]):
 			op = {}
-			op["name"] = operation.get('id').replace(" ", "")
+			op["name"] = operation.get(hrests_dict["operationName"]).replace(" ", "")
 			op["method"] = operation.xpath(hrests_dict["method"])[0].text_content().replace(" ", "").upper()
 			if op["method"] not in methods:
 				raise Exception("Error while parsing operation " + op["name"] + ": invalid REST method.")
@@ -281,7 +307,11 @@ def html2resourcesxpath(html_text, hrests_dict):
 			op["input"] = {}
 			inpObj = {}
 			inpObj["params"] = []
-			inputs = operation.xpath(hrests_dict["input"])[0]
+			inputs = operation.xpath(hrests_dict["input"])
+			if len(inputs) > 0:
+				inputs = inputs[0]
+			else:
+				inputs = None
 			if inputs is not None:
 				if hrests_dict["message"] in inputs.attrib:
 					if len(inputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
@@ -296,7 +326,7 @@ def html2resourcesxpath(html_text, hrests_dict):
 					inp ={}
 					inp["name"] = input.text_content().replace(" ", "")
 					if len(inp["name"]) == 0:
-						raise Exception("Error while extracting resources: input parameter name can\'t be empty.")
+						print("Warning: input parameter is empty.")
 					if hrests_dict["type"] in input.attrib:
 						inp["type"] = input.get(hrests_dict["type"])
 					else:
@@ -321,7 +351,11 @@ def html2resourcesxpath(html_text, hrests_dict):
 			op["output"] = {}
 			outObj = {}
 			outObj["params"] = []
-			outputs = operation.xpath(hrests_dict["output"])[0]
+			outputs = operation.xpath(hrests_dict["output"])
+			if len(outputs) > 0:
+				outputs = outputs[0]
+			else:
+				outputs = None
 			if outputs is not None:
 				if hrests_dict["message"] in outputs.attrib:
 					if len(outputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
@@ -336,7 +370,7 @@ def html2resourcesxpath(html_text, hrests_dict):
 					out ={}
 					out["name"] = output.text_content().replace(" ", "")
 					if len(out["name"]) == 0:
-						raise Exception("Error while extracting resources: output parameter name can\'t be empty.")
+						print("Warning: output parameter name is empty.")
 					if hrests_dict["type"] in output.attrib:
 						out["type"] = output.get(hrests_dict["type"])
 					else:
@@ -359,14 +393,54 @@ def html2resourcesxpath(html_text, hrests_dict):
 			op["output"] = outObj
 
 			resources["operations"].append(op)
-			if len(resources["operations"]) == 0:
-				print("Warning: no operation found.")
+		if len(resources["operations"]) == 0:
+			print("Warning: no operation found.")
 		return resources
 
 	except Exception as e:
 		print(e)
 		print("Check your HTML document.")
+		exc_type, exc_obj, exc_tb = sys.exc_info()
+		fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+		print(exc_type, fname, exc_tb.tb_lineno)
+		print(resources)
 		sys.exit()
+
+# Save the generated WSDL 2.0 to WSO2 Governance Registry
+def saveToRepository(resources, hrests_dict):
+	print("Authenticating to WSO2 Governance Registry as " + hrests_dict["username"] + " ...")
+	print()
+	url = hrests_dict["context"] + '/publisher/apis/authenticate'
+	data={'username': hrests_dict["username"], 'password': hrests_dict["password"]}
+	r = requests.post(url, data=data, verify=False)
+	print()
+	if (r.status_code == 200):
+		version = input("Authentication success. Please enter the version of the WSDL 2.0 document: ")
+		
+		if "schemaLocation" not in resources: 
+			print("Adding " + resources["service"] + ".wsdl version " + version + " to WSO2 Governance Registry ...")
+		else:
+			print("Adding " + resources["service"] + ".zip version " + version + " to WSO2 Governance Registry ...")
+		
+		print()
+		filename = resources["service"] + ".wsdl"
+		url = hrests_dict["context"] + '/publisher/assets/wsdl/apis/wsdls?type=wsdl'
+		data={'wsdl': 'wsdl', 'wsdl_file': filename, 'filename': filename, 'wsdl_file_name': filename, 'file_version': version, 'addNewWsdlFileAssetButton': 'Create'}
+		headers={'Cookie':'JSESSIONID=' + r.json()['data']['sessionId']}
+
+		if "schemaLocation" not in resources: 
+			files = {'wsdl_file': open("../wsdl/" + resources["service"] + ".wsdl", 'rb')}
+		else:
+			files = {'wsdl_file': open("../wsdl/" + resources["service"] + "/" + resources["service"] + ".zip", 'rb')}
+		r2 = requests.post(url, data=data, verify=False, headers=headers, files=files)
+		print()
+		if (r2.status_code != 200):
+			print(str(r2.json()['code']) + " " + r2.json()['description'] + ": " + r2.json()['message'])
+		else:
+			print("File succesfully uploaded.")
+
+	else:
+		print("Authentication failed. Consider uploading the file manually.")
 
 # Main Program
 if len(sys.argv) < 2:
@@ -393,29 +467,10 @@ else:
 		print(resources)
 		print()
 
-		print("Authenticating to WSO2 Governance Registry as " + hrests_dict["username"] + " ...")
-		print()
-		url = hrests_dict["context"] + '/publisher/apis/authenticate'
-		data={'username': hrests_dict["username"], 'password': hrests_dict["password"]}
-		r = requests.post(url, data=data, verify=False)
-		print()
-		if (r.status_code == 200):
-			version = input("Authentication success. Please enter the version of the WSDL 2.0 document: ")
-			
-			print("Adding " + resources["service"] + ".wsdl version " + version + " to WSO2 Governance Registry ...")
-			print()
-			filename = resources["service"] + ".wsdl"
-			url = hrests_dict["context"] + '/publisher/assets/wsdl/apis/wsdls?type=wsdl'
-			data={'wsdl': 'wsdl', 'wsdl_file': filename, 'filename': filename, 'wsdl_file_name': filename, 'file_version': version, 'addNewWsdlFileAssetButton': 'Create'}
-			headers={'Cookie':'JSESSIONID=' + r.json()['data']['sessionId']}
-			files = {'wsdl_file': open("../wsdl/" + resources["service"] + ".wsdl", 'rb')}
-			r2 = requests.post(url, data=data, verify=False, headers=headers, files=files)
-			print()
-			if (r2.status_code != 200):
-				print(str(r2.json()['code']) + " " + r2.json()['description'] + ": " + r2.json()['message'])
-			else:
-				print("File succesfully uploaded.")
+		isSaveToRepository = input("Save to WSO2 Governance Registry? [y/n] ")
+		while isSaveToRepository != 'y' and isSaveToRepository != 'Y' and isSaveToRepository != 'n' and isSaveToRepository != 'N':
+			isSaveToRepository = input("Unknown input.\nSave to WSO2 Governance Registry? [y/n] ")
 
-		else:
-			print("Authentication failed. Consider uploading the file manually.")
+		if isSaveToRepository == 'y' or isSaveToRepository == 'Y':
+			saveToRepository(resources, hrests_dict)
 		
