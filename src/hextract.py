@@ -22,6 +22,8 @@ def generateDictionary():
 				hrests_dict[k] = v.rstrip().lower()
 		f.close()
 	except IOError:
+		print("No configuration file found. Generating default configuration file at ../config/config.ini.")
+		print("Please set your xpath queries and other attributes before running this program again.")
 		f = open("../config/config.ini", 'w')
 		f.write("[XPATH QUERIES]\n")
 		f.write("service=service\n")
@@ -71,6 +73,8 @@ def generateDictionary():
 		hrests_dict["username"] = "admin"
 		hrests_dict["password"] = "admin"
 
+		sys.exit(1)
+
 	return hrests_dict
 
 # Generate WSDL 2.0 document
@@ -80,7 +84,10 @@ def generateWSDL2(resources):
 	"""
 	xml += "targetNamespace=\"" + resources["targetNamespace"] + "\"\n"
 	xml += "	xmlns:tns=\"" + resources['targetNamespace'] + "\"\n"
-	xml += "	xmlns:msg=\"" + resources['xsdnamespace'] + "\"\n"
+	if 'xsdnamespace' in resources:
+		xml += "	xmlns:msg=\"" + resources['xsdnamespace'] + "\"\n"
+	else:
+		xml += "	xmlns:msg=\"" + resources['targetNamespace'] + "\"\n"
 	xml += """	xmlns:whttp="http://www.w3.org/ns/wsdl/http"
 	xmlns:wsdlx="http://www.w3.org/ns/wsdl-extensions">
 
