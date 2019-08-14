@@ -295,38 +295,41 @@ def html2resourcesxpath(html_text, hrests_dict):
 			elif not hrests_dict["schemaLocation"].endswith(".xsd") and urlparse(hrests_dict["schemaLocation"]).scheme == "":
 				print("Warning: schemaLocation is not of xsd format or valid URI.")			
 		resources["operations"] = []
-		if len((hrests_dict["operation"])) > 0:
-			for operation in service.xpath("." + hrests_dict["operation"]):
-				op = {}
-				op["name"] = operation.get(hrests_dict["operationName"]).replace(" ", "")
-				op["method"] = operation.xpath("." + hrests_dict["method"])[0].text_content().replace(" ", "").upper()
-				if op["method"] not in methods:
-					raise Exception("Error while parsing operation " + op["name"] + ": invalid REST method.")
-				endpoint = operation.xpath("." + hrests_dict["endpoint"])[0]
-				op["endpoint"] = endpoint.text_content().replace(" ", "")
-				if urlparse(op["endpoint"]).scheme == "":
-					raise Exception("Error while parsing operation " + op["name"] + ": endpoint must be a valid URI.")
-				if endpoint.get(hrests_dict["binding"]):
-					if len(endpoint.get(hrests_dict["binding"]).replace(" ", "")) > 0:
-						op["binding"] = endpoint.get(hrests_dict["binding"]).replace(" ", "")
-				op["input"] = {}
-				inpObj = {}
-				inpObj["params"] = []
-				inputs = operation.xpath("." + hrests_dict["input"])
-				if len(inputs) > 0:
-					inputs = inputs[0]
-				else:
-					inputs = None
-				if inputs is not None:
-					if hrests_dict["message"] in inputs.attrib:
-						if len(inputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
-							inpObj["message"] = inputs.get(hrests_dict["message"]).replace(" ", "")
-						else:
-							inpObj["message"] = op["name"] + "Request"
-							print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + inpObj["message"])
+
+		# if len((hrests_dict["operation"])) > 0:
+		for operation in service.xpath("." + hrests_dict["operation"]):
+			op = {}
+			op["name"] = operation.get(hrests_dict["operationName"]).replace(" ", "")
+			op["method"] = operation.xpath("." + hrests_dict["method"])[0].text_content().replace(" ", "").upper()
+			if op["method"] not in methods:
+				raise Exception("Error while parsing operation " + op["name"] + ": invalid REST method.")
+			endpoint = operation.xpath("." + hrests_dict["endpoint"])[0]
+			op["endpoint"] = endpoint.text_content().replace(" ", "")
+			if urlparse(op["endpoint"]).scheme == "":
+				raise Exception("Error while parsing operation " + op["name"] + ": endpoint must be a valid URI.")
+			if endpoint.get(hrests_dict["binding"]):
+				if len(endpoint.get(hrests_dict["binding"]).replace(" ", "")) > 0:
+					op["binding"] = endpoint.get(hrests_dict["binding"]).replace(" ", "")
+
+			op["input"] = {}
+			inpObj = {}
+			inpObj["params"] = []
+			inputs = operation.xpath("." + hrests_dict["input"])
+			if len(inputs) > 0:
+				inputs = inputs[0]
+			else:
+				inputs = None
+			if inputs is not None:
+				if hrests_dict["message"] in inputs.attrib:
+					if len(inputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
+						inpObj["message"] = inputs.get(hrests_dict["message"]).replace(" ", "")
 					else:
 						inpObj["message"] = op["name"] + "Request"
 						print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + inpObj["message"])
+				else:
+					inpObj["message"] = op["name"] + "Request"
+					print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + inpObj["message"])
+				if "xsdNamespace" not in hrests_dict:
 					for input in inputs.xpath("." + hrests_dict["param"]):
 						inp ={}
 						inp["name"] = input.text_content().replace(" ", "")
@@ -348,29 +351,30 @@ def html2resourcesxpath(html_text, hrests_dict):
 							if not inp["maxOccurs"].isdigit() and not inp["maxOccurs"] == "unbounded":
 								raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + inp["name"] + " must be a positive integer.")
 						inpObj["params"].append(inp)
-				else:
-					inpObj["message"] = op["name"] + "Request"
-					print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + inpObj["message"])
-				op["input"] = inpObj
+			else:
+				inpObj["message"] = op["name"] + "Request"
+				print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + inpObj["message"])
+			op["input"] = inpObj
 
-				op["output"] = {}
-				outObj = {}
-				outObj["params"] = []
-				outputs = operation.xpath("." + hrests_dict["output"])
-				if len(outputs) > 0:
-					outputs = outputs[0]
-				else:
-					outputs = None
-				if outputs is not None:
-					if hrests_dict["message"] in outputs.attrib:
-						if len(outputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
-							outObj["message"] = outputs.get(hrests_dict["message"]).replace(" ", "")
-						else:
-							outObj["message"] = op["name"] + "Response"
-							print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + outObj["message"])
+			op["output"] = {}
+			outObj = {}
+			outObj["params"] = []
+			outputs = operation.xpath("." + hrests_dict["output"])
+			if len(outputs) > 0:
+				outputs = outputs[0]
+			else:
+				outputs = None
+			if outputs is not None:
+				if hrests_dict["message"] in outputs.attrib:
+					if len(outputs.get(hrests_dict["message"]).replace(" ", "")) > 0:
+						outObj["message"] = outputs.get(hrests_dict["message"]).replace(" ", "")
 					else:
 						outObj["message"] = op["name"] + "Response"
 						print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + outObj["message"])
+				else:
+					outObj["message"] = op["name"] + "Response"
+					print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + outObj["message"])
+				if "xsdNamespace" not in hrests_dict:	
 					for output in outputs.xpath("." + hrests_dict["param"]):
 						out ={}
 						out["name"] = output.text_content().replace(" ", "")
@@ -392,12 +396,13 @@ def html2resourcesxpath(html_text, hrests_dict):
 							if not out["maxOccurs"].isdigit() and not out["maxOccurs"] == "unbounded":
 								raise Exception("Error while parsing operation " + op["name"] + ": maxOccurs for param " + out["name"] + " must be a positive integer.")
 						outObj["params"].append(out)
-				else:
-					outObj["message"] = op["name"] + "Response"
-					print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + outObj["message"])
-				op["output"] = outObj
+			else:
+				outObj["message"] = op["name"] + "Response"
+				print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + outObj["message"])
+			op["output"] = outObj
 
-				resources["operations"].append(op)
+			resources["operations"].append(op)
+
 		if len(resources["operations"]) == 0:
 			print("Warning: no operation found.")
 		return resources
