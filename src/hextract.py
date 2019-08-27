@@ -124,7 +124,7 @@ def generateWSDL2(resources):
 			xml += """					</xsd:sequence>		
 				</xsd:complexType>
 	  	</xsd:element>
-	  """
+"""
 		xml += """		</xsd:schema>
 """
 	xml += """	</wsdl:types>
@@ -307,13 +307,13 @@ def html2resourcesxpath(html_text, hrests_dict):
 		for operation in service.xpath("." + hrests_dict["operation"]):
 			op = {}
 			op["name"] = operation.get(hrests_dict["operationName"]).replace(" ", "")
-			op["method"] = operation.xpath("." + hrests_dict["method"])[0].text_content().replace(" ", "").upper()
+			op["method"] = operation.xpath("." + hrests_dict["method"])[0].text_content().replace(" ", "").upper().strip()
 			if op["method"] not in methods:
-				raise Exception("Error while parsing operation " + op["name"] + ": invalid REST method.")
+				raise Exception("Error while parsing operation " + op["name"] + ": invalid REST \"" + op["method"] + "\"method.")
 			endpoint = operation.xpath("." + hrests_dict["endpoint"])[0]
-			op["endpoint"] = endpoint.text_content().replace(" ", "")
+			op["endpoint"] = endpoint.text_content().replace(" ", "").strip()
 			if urlparse(op["endpoint"]).scheme == "":
-				raise Exception("Error while parsing operation " + op["name"] + ": endpoint must be a valid URI.")
+				raise Exception("Error while parsing operation " + op["name"] + ": endpoint \"" + op["endpoint"] + "\" must be a valid URI.")
 			if endpoint.get(hrests_dict["binding"]):
 				if len(endpoint.get(hrests_dict["binding"]).replace(" ", "")) > 0:
 					op["binding"] = endpoint.get(hrests_dict["binding"]).replace(" ", "")
@@ -339,7 +339,7 @@ def html2resourcesxpath(html_text, hrests_dict):
 
 				if ":" not in inpObj["message"] and not hrests_dict["localMessage"]:
 					hrests_dict["localMessage"] = True
-				else:
+				elif ":" in inpObj["message"]:
 					xsd, message = inpObj["message"].split(':', 1)
 					if hrests_dict["importedXsd"] and not messageExistInXSD(message, hrests_dict["importedXsd"][xsd][1]):
 						print("Warning: Couldn't find \"" + message + "\" in \"" + hrests_dict["importedXsd"][xsd][1] + "\".")
@@ -390,7 +390,7 @@ def html2resourcesxpath(html_text, hrests_dict):
 					print("Warning: no message name specified for " + op["name"] + ", resolved using default name " + outObj["message"])	
 				if ":" not in outObj["message"] and not hrests_dict["localMessage"]:
 					hrests_dict["localMessage"] = True
-				else:
+				elif ":" in outObj["message"]:
 					xsd, message = outObj["message"].split(':', 1)
 					if hrests_dict["importedXsd"] and not messageExistInXSD(message, hrests_dict["importedXsd"][xsd][1]):
 						print("Warning: Couldn't find \"" + message + "\" in \"" + hrests_dict["importedXsd"][xsd][1] + "\".")
